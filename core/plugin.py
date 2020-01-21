@@ -15,7 +15,7 @@ class Plugin(object):
         self.options = Options()
         self.shell = shell
 
-        self.loader = core.loader
+        self.job = self.job()
 
         self.load()
 
@@ -27,24 +27,50 @@ class Plugin(object):
     def run(self):
         pass
 
-    def dispatch(self, workloads, job):
-        target = self.options.get("ZOMBIE")
-        splitted = [x.strip() for x in target.split(",")]
+    ''' job type of the associated plugin '''
+    def job(self):
+        pass
 
-        for server in self.shell.stagers:
-            for session in server.sessions:
-                if target == "ALL" or str(session.id) in splitted:
-                    if server.stager.WORKLOAD in workloads.keys():
-                        workload = workloads[server.stager.WORKLOAD]
-                        options = copy.deepcopy(self.options)
-                        j = job(self.shell, session, self.shell.state, workload, options)
-                        session.jobs.append(j)
+    def dispatch(self, workloads, job, checkrepeat=True, repeatzombie=''):
+        if not repeatzombie:
+            target = self.options.get("ZOMBIE")
+        else:
+            target = repeatzombie
+        commas = [x.strip() for x in target.split(",")]
+
+        splitted = []
+        for x in commas:
+            s = x.split("-")
+            if len(s) == 1:
+                splitted.append(str(x))
+            else:
+                for i in range(int(s[0]), int(s[1]) + 1):
+                    splitted.append(str(i))
+
+        self.ret_jobs = []
+        for skey, session in self.shell.sessions.items():
+            if (target.lower().strip() == "all" or str(session.id) in splitted) and not session.killed:
+                if session.stager.WORKLOAD in workloads and session.fullystaged:
+                    self.shell.print_verbose("Stager: %s Session %s" % (session.stager,session))
+                    workload = workloads[session.stager.WORKLOAD]
+                    options = copy.deepcopy(self.options)
+                    j = job(self.shell, session.id, self.STATE, workload, options)
+                    if j.create:
+                        self.shell.jobs[j.key] = j
+                        self.ret_jobs.append(j)
+                        self.shell.update_restore = True
+
+        if checkrepeat:
+            if self.options.get("REPEAT") == "true":
+                self.repeat(self.shell, workloads, self.options)
 
     def load_payload(self, id):
         try:
-            for server in self.shell.stagers:
-                if int(server.payload_id) == int(id):
-                    return server.get_payload().decode()
+            for port in self.shell.stagers:
+                for endpoint in self.shell.stagers[port]:
+                    stager = self.shell.stagers[port][endpoint]
+                    if int(stager.get_payload_id()) == int(id):
+                        return stager.get_payload_data().decode()
         except:
             pass
 

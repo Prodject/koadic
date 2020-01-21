@@ -7,6 +7,7 @@ class VoiceJob(core.job.Job):
         self.display()
 
     def display(self):
+        self.results = "Completed"
         self.shell.print_plain(self.data)
 
 class VoiceImplant(core.implant.Implant):
@@ -14,14 +15,17 @@ class VoiceImplant(core.implant.Implant):
     NAME = "Voice"
     DESCRIPTION = "Makes the computer speak a message."
     AUTHORS = ["RiskSense, Inc."]
+    STATE = "implant/fun/voice"
 
     def load(self):
         self.options.register("MESSAGE", "I can't do that Dave", "message to speak")
 
-    def run(self):
+    def job(self):
+        return VoiceJob
 
+    def run(self):
         payloads = {}
         #payloads["vbs"] = self.load_script("data/implant/fun/voice.vbs", self.options)
-        payloads["js"] = self.loader.load_script("data/implant/fun/voice.js", self.options)
+        payloads["js"] = "data/implant/fun/voice.js"
 
-        self.dispatch(payloads, VoiceJob)
+        self.dispatch(payloads, self.job)

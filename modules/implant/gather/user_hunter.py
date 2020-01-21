@@ -1,10 +1,14 @@
 import core.implant
 import core.job
 import string
+import uuid
 
 class UserHunterJob(core.job.Job):
     def create(self):
         self.fork32Bit = True
+        self.options.set("DLLUUID", uuid.uuid4().hex)
+        self.options.set("MANIFESTUUID", uuid.uuid4().hex)
+        self.options.set("DIRECTORY", self.options.get('DIRECTORY').replace("\\", "\\\\").replace('"', '\\"'))
 
     def report(self, handler, data, sanitize = False):
         data = data.decode('latin-1')
@@ -39,6 +43,7 @@ class UserHunterJob(core.job.Job):
                     continue # not concerned with machine accounts
                 comps = ", ".join(list(set(session.split(":")[1].split(","))))
                 self.shell.print_plain(user + " => " + comps)
+                self.results += user + " => " + comps + "\n"
 
     def done(self):
         self.display()
@@ -55,6 +60,7 @@ class UserHunterImplant(core.implant.Implant):
     NAME = "User Hunter"
     DESCRIPTION = "Identifies and locates all logged in users"
     AUTHORS = ["TheNaterz"]
+    STATE = "implant/gather/user_hunter"
 
     def load(self):
         self.options.register("DIRECTORY", "%TEMP%", "writeable directory on zombie", required=False)
@@ -67,13 +73,11 @@ class UserHunterImplant(core.implant.Implant):
         self.options.register("DLLUUID", "", "HTTP header for UUID", hidden=True)
         self.options.register("MANIFESTUUID", "", "UUID", hidden=True)
 
+    def job(self):
+        return UserHunterJob
+
     def run(self):
-
-        import uuid
-        self.options.set("DLLUUID", uuid.uuid4().hex)
-        self.options.set("MANIFESTUUID", uuid.uuid4().hex)
-
         workloads = {}
-        workloads["js"] = self.loader.load_script("data/implant/gather/user_hunter.js", self.options)
+        workloads["js"] = "data/implant/gather/user_hunter.js"
 
-        self.dispatch(workloads, UserHunterJob)
+        self.dispatch(workloads, self.job)
